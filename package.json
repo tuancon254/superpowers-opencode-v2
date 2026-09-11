@@ -1,0 +1,23 @@
+{
+  "name": "superpowers-opencode-v2",
+  "version": "1.0.0",
+  "description": "OpenCode V2 port of the Superpowers plugin: skills plus the using-superpowers bootstrap",
+  "type": "module",
+  "main": "index.js",
+  "exports": {
+    ".": "./index.js"
+  },
+  "files": [
+    "index.js",
+    "skills",
+    "README.md"
+  ],
+  "dependencies": {
+    "superpowers": "github:obra/superpowers"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/tuancon254/superpowers-opencode-v2.git"
+  },
+  "license": "MIT"
+}

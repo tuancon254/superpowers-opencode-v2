@@ -11,7 +11,7 @@ failed to load plugin: Plugin must export a default definition with an id and an
 Plugin này làm đúng 2 việc như bản gốc, bằng API V2:
 
 1. Đăng ký toàn bộ skill qua `ctx.skill.transform(...)`.
-2. Thêm nội dung `using-superpowers` vào system instructions mỗi request qua `ctx.session.hook("context", ...)`.
+2. Chèn nội dung `using-superpowers` vào **user message đầu tiên** qua `ctx.session.hook("context", ...)` — giống bản official, để nằm trong conversation prefix (cache-friendly).
 
 Skill được đọc từ package **`superpowers`** (git dependency), nên **tự cập nhật** cùng plugin.
 
@@ -93,7 +93,7 @@ node scripts/sync-skills.mjs /path/to/superpowers   # refresh bản fallback
 | --- | --- |
 | `SuperpowersPlugin = async (...) => ({...})` | `default { id, setup(ctx) }` |
 | Hook `config` → `config.skills.paths.push(dir)` | `ctx.skill.transform(editor => editor.add(skill))` |
-| `experimental.chat.messages.transform` (user message) | `ctx.session.hook("context", event => event.system.push(...))` |
+| `experimental.chat.messages.transform` (chèn user message) | `ctx.session.hook("context")` → chèn vào `firstUser.content` (khớp official) |
 
 ## Tool mapping (OpenCode V2)
 
@@ -112,6 +112,6 @@ node scripts/sync-skills.mjs /path/to/superpowers   # refresh bản fallback
 
 ## Lưu ý
 
-- **`SystemPart` shape**: `event.system` validate bằng `LLM.SystemPart`, bắt buộc `{ type: "text", text }` — chỉ `{ text }` sẽ làm fail cả request (`Failed to drain Session`).
+- **Shape**: message content là `LLM.Content.Text` → `{ type: "text", text }`. (Nếu dùng system part thì `LLM.SystemPart` cũng bắt buộc `type: "text"`; chỉ `{ text }` sẽ làm fail cả request — `Failed to drain Session`.)
 - **Trùng `brainstorming`**: skill global `~/.config/opencode/skill/brainstorming` có precedence cao hơn transform của plugin; xóa bản global nếu muốn dùng bản mới.
 - **TODO tool**: V2 cố ý bỏ; xem tool mapping ở trên.

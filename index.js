@@ -7,8 +7,10 @@
  *
  * This port does the same two things with the V2 plugin API:
  *   1. Registers every Superpowers skill through `ctx.skill.transform`.
- *   2. Adds the `using-superpowers` bootstrap to the model's system
- *      instructions through `ctx.session.hook("context", ...)`.
+ *   2. Injects the `using-superpowers` bootstrap into the first user message
+ *      through `ctx.session.hook("context", ...)`, matching the official plugin.
+ *      A user message belongs to the conversation prefix, so providers cache it
+ *      instead of re-tokenizing a system block on every request (#750, #894).
  */
 
 import fs from "node:fs"
@@ -145,11 +147,15 @@ ${TOOL_MAPPING}
   return bootstrapCache
 }
 
-function alreadyInjected(systemParts) {
+function containsBootstrap(content) {
   return (
-    Array.isArray(systemParts) &&
-    systemParts.some(
-      (part) => part && typeof part.text === "string" && part.text.includes(BOOTSTRAP_MARKER),
+    Array.isArray(content) &&
+    content.some(
+      (part) =>
+        part &&
+        part.type === "text" &&
+        typeof part.text === "string" &&
+        part.text.includes(BOOTSTRAP_MARKER),
     )
   )
 }
@@ -163,11 +169,16 @@ export default {
     })
 
     const bootstrap = getBootstrap()
-    if (bootstrap) {
-      await ctx.session.hook("context", (event) => {
-        if (alreadyInjected(event.system)) return
-        event.system.push({ type: "text", text: bootstrap })
-      })
-    }
+    if (!bootstrap) return
+
+    // Official behavior: inject into the first user message. Not a system part,
+    // so the provider caches it as part of the conversation prefix and Qwen-style
+    // models do not see an extra system message.
+    await ctx.session.hook("context", (event) => {
+      const firstUser = event.messages.find((message) => message.role === "user")
+      if (!firstUser || !Array.isArray(firstUser.content) || !firstUser.content.length) return
+      if (containsBootstrap(firstUser.content)) return
+      firstUser.content.unshift({ type: "text", text: bootstrap })
+    })
   },
 }

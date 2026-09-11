@@ -53,6 +53,17 @@ opencode2 plugin update superpowers-opencode-v2
 
 Vì plugin phụ thuộc `superpowers: github:obra/superpowers`, khi plugin update thì **skills cũng theo upstream**.
 
+### Nếu skills không đổi sau khi update
+
+Cache npm có thể pin dependency ở commit cũ (trong `package-lock.json`). Ép refresh:
+
+```sh
+opencode2 plugin remove superpowers-opencode-v2
+opencode2 plugin add "superpowers-opencode-v2@git+https://github.com/tuancon254/superpowers-opencode-v2.git#main"
+```
+
+Hoặc xóa thư mục cache `~/.cache/opencode/npm/git-superpowers-opencode-v2-*` rồi restart.
+
 ## Cấu trúc
 
 ```

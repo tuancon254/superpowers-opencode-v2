@@ -8,10 +8,11 @@ Bản V1 (`.opencode/plugins/superpowers.js`) không chạy được trên `open
 failed to load plugin: Plugin must export a default definition with an id and an effect or setup function.
 ```
 
-Plugin này làm đúng 2 việc như bản gốc, bằng API V2:
+Plugin này làm 3 việc, bằng API V2:
 
 1. Đăng ký toàn bộ skill qua `ctx.skill.transform(...)`.
 2. Chèn nội dung `using-superpowers` vào **user message đầu tiên** qua `ctx.session.hook("context", ...)` — giống bản official, để nằm trong conversation prefix (cache-friendly).
+3. Cung cấp lại `todowrite`/`todoread` (V2 cố ý bỏ) qua `ctx.tool.transform` + `ctx.storage`, session-scoped.
 
 Skill được đọc từ package **`superpowers`** (git dependency), nên **tự cập nhật** cùng plugin.
 
@@ -83,9 +84,25 @@ Nguồn skill theo thứ tự ưu tiên:
 ## Dev
 
 ```sh
-bun install                       # cài dependency superpowers
-node scripts/sync-skills.mjs /path/to/superpowers   # refresh bản fallback
+bun install                                          # cài dependency superpowers
+node scripts/sync-skills.mjs /path/to/superpowers     # refresh bản fallback
+npm test                                             # mock test (không cần opencode)
 ```
+
+## Todo tools
+
+V2 đã bỏ `todowrite`/`todoread`, nên plugin tự cung cấp lại (schema giống V1, semantics replace-all, session-scoped):
+
+| Tool | Input | Output |
+| --- | --- | --- |
+| `todowrite` | `{ todos: [{ content, status, priority }] }` | JSON list |
+| `todoread` | `{}` | JSON list |
+
+- `status`: `pending \| in_progress \| completed \| cancelled`; `priority`: `high \| medium \| low`.
+- Lưu ở `ctx.storage` key `todos/<sessionID>`; tự dọn entry > 30 ngày lúc setup.
+- **Sau compaction**: hook `compaction` đánh dấu session, request kế tiếp chèn reminder "restored after compaction" vào user message.
+- **Không có TUI panel** (V2 không cho) — chỉ model đọc/ghi được.
+- Muốn chặn/duyệt: thêm permission `{ "action": "todowrite", "resource": "*", "effect": "ask" }` (tương tự `todoread`).
 
 ## V1 → V2 mapping
 
@@ -94,12 +111,13 @@ node scripts/sync-skills.mjs /path/to/superpowers   # refresh bản fallback
 | `SuperpowersPlugin = async (...) => ({...})` | `default { id, setup(ctx) }` |
 | Hook `config` → `config.skills.paths.push(dir)` | `ctx.skill.transform(editor => editor.add(skill))` |
 | `experimental.chat.messages.transform` (chèn user message) | `ctx.session.hook("context")` → chèn vào `firstUser.content` (khớp official) |
+| (built-in) `todowrite` | plugin tự đăng ký lại qua `ctx.tool.transform` + `ctx.storage` |
 
 ## Tool mapping (OpenCode V2)
 
 | Hành động | Tool V2 |
 | --- | --- |
-| Create/update todo | OpenCode V2 không có tool TODO — ghi vào plan/TODO file |
+| Create/update todo | `todowrite` (đọc: `todoread`) |
 | Dispatch subagent | `subagent` (`agent: "general"` hoặc `"explore"`) |
 | Invoke skill | `skill` |
 | Read file | `read` |
@@ -114,4 +132,4 @@ node scripts/sync-skills.mjs /path/to/superpowers   # refresh bản fallback
 
 - **Shape**: message content là `LLM.Content.Text` → `{ type: "text", text }`. (Nếu dùng system part thì `LLM.SystemPart` cũng bắt buộc `type: "text"`; chỉ `{ text }` sẽ làm fail cả request — `Failed to drain Session`.)
 - **Trùng `brainstorming`**: skill global `~/.config/opencode/skill/brainstorming` có precedence cao hơn transform của plugin; xóa bản global nếu muốn dùng bản mới.
-- **TODO tool**: V2 cố ý bỏ; xem tool mapping ở trên.
+- **TODO tool**: V2 cố ý bỏ nên plugin tự cung cấp `todowrite`/`todoread` (xem mục Todo tools).

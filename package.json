@@ -4,6 +4,9 @@
   "description": "OpenCode V2 port of the Superpowers plugin: skills plus the using-superpowers bootstrap",
   "type": "module",
   "main": "index.js",
+  "scripts": {
+    "test": "node tests/plugin.mock.mjs"
+  },
   "exports": {
     ".": "./index.js"
   },

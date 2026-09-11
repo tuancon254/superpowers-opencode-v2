@@ -49,7 +49,7 @@ const SKILLS_DIR = resolveSkillsDir()
 
 const TOOL_MAPPING = `**Tool Mapping for OpenCode V2:**
 When skills request actions, substitute OpenCode V2 equivalents:
-- Create or update todos → OpenCode V2 has no native TODO tool; keep the list in a plan file or a repo-local TODO file
+- Create or update todos → \`todowrite\`; read the current list → \`todoread\`
 - "Subagent (general-purpose):" / dispatch a subagent → \`subagent\` with \`agent: "general"\` (use \`"explore"\` for codebase exploration)
 - Invoke a skill → OpenCode's native \`skill\` tool
 - Read files → \`read\`
@@ -160,6 +160,102 @@ function containsBootstrap(content) {
   )
 }
 
+const TODO_PREFIX = "todos/"
+
+function todoKey(sessionID) {
+  return `${TODO_PREFIX}${sessionID || "default"}`
+}
+
+function extractTodos(record) {
+  if (Array.isArray(record)) return record
+  if (record && Array.isArray(record.todos)) return record.todos
+  return []
+}
+
+async function readTodos(ctx, sessionID) {
+  return extractTodos(await ctx.storage.get(todoKey(sessionID)))
+}
+
+function formatTodoReminder(todos) {
+  const lines = todos.map((todo) => `- [${todo.status}] ${todo.content}`).join("\n")
+  return `**Superpowers todos (restored after compaction):**\n${lines}\nUse \`todoread\` for the full list and \`todowrite\` to update it.`
+}
+
+const TODO_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000
+
+// Drop todo lists for sessions older than TODO_MAX_AGE_MS.
+async function pruneTodos(ctx) {
+  try {
+    const page = await ctx.storage.scan({ prefix: TODO_PREFIX, limit: 500 })
+    const cutoff = Date.now() - TODO_MAX_AGE_MS
+    for (const entry of page.entries) {
+      const updatedAt = entry.value && typeof entry.value.updatedAt === "number" ? entry.value.updatedAt : 0
+      if (updatedAt < cutoff) await ctx.storage.remove(entry.key)
+    }
+  } catch {
+    // best effort
+  }
+}
+
+// Mirrors the V1 `todowrite` schema: replace-all per session.
+function todoWriteSchema() {
+  return {
+    type: "object",
+    properties: {
+      todos: {
+        type: "array",
+        description: "The updated todo list",
+        items: {
+          type: "object",
+          properties: {
+            content: { type: "string", description: "Brief description of the task" },
+            status: {
+              type: "string",
+              enum: ["pending", "in_progress", "completed", "cancelled"],
+              description: "Current status of the task",
+            },
+            priority: {
+              type: "string",
+              enum: ["high", "medium", "low"],
+              description: "Priority level of the task",
+            },
+          },
+          required: ["content", "status", "priority"],
+          additionalProperties: false,
+        },
+      },
+    },
+    required: ["todos"],
+    additionalProperties: false,
+  }
+}
+
+function registerTodoTools(ctx) {
+  return ctx.tool.transform((editor) => {
+    editor.add({
+      name: "todowrite",
+      description:
+        "Create and manage a structured task list for the current session. Replace the whole list each call. Status: pending, in_progress (one at a time), completed, cancelled. Priority: high, medium, low.",
+      input: todoWriteSchema(),
+      execute: async (input, tool) => {
+        const todos = input && Array.isArray(input.todos) ? input.todos : []
+        await ctx.storage.set(todoKey(tool && tool.sessionID), { todos, updatedAt: Date.now() })
+        return { content: JSON.stringify(todos, null, 2) }
+      },
+    })
+
+    editor.add({
+      name: "todoread",
+      description: "Read the current todo list for this session.",
+      input: { type: "object", properties: {}, additionalProperties: false },
+      execute: async (_input, tool) => {
+        const todos = await readTodos(ctx, tool && tool.sessionID)
+        return { content: JSON.stringify(todos, null, 2) }
+      },
+    })
+  })
+}
+
 export default {
   id: "superpowers",
   async setup(ctx) {
@@ -168,17 +264,39 @@ export default {
       for (const skill of skills) editor.add(skill)
     })
 
+    await registerTodoTools(ctx)
+
+    await pruneTodos(ctx)
+
     const bootstrap = getBootstrap()
     if (!bootstrap) return
+
+    const needsReminder = new Set()
+
+    // Compaction may summarize the bootstrap and todo tool output away, so flag
+    // the session and re-inject the current list on the next model request.
+    await ctx.session.hook("compaction", (event) => {
+      needsReminder.add(event.sessionID)
+    })
 
     // Official behavior: inject into the first user message. Not a system part,
     // so the provider caches it as part of the conversation prefix and Qwen-style
     // models do not see an extra system message.
-    await ctx.session.hook("context", (event) => {
+    await ctx.session.hook("context", async (event) => {
       const firstUser = event.messages.find((message) => message.role === "user")
       if (!firstUser || !Array.isArray(firstUser.content) || !firstUser.content.length) return
-      if (containsBootstrap(firstUser.content)) return
-      firstUser.content.unshift({ type: "text", text: bootstrap })
+
+      if (needsReminder.has(event.sessionID)) {
+        needsReminder.delete(event.sessionID)
+        const todos = await readTodos(ctx, event.sessionID)
+        if (todos.length) {
+          firstUser.content.unshift({ type: "text", text: formatTodoReminder(todos) })
+        }
+      }
+
+      if (!containsBootstrap(firstUser.content)) {
+        firstUser.content.unshift({ type: "text", text: bootstrap })
+      }
     })
   },
 }

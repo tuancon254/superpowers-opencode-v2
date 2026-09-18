@@ -113,9 +113,8 @@ function loadSkills() {
       id: path.basename(path.dirname(file)),
       name,
       description,
-      slash: true,
       autoinvoke: true,
-      location: file,
+      path: file,
       content: body,
     }
   })

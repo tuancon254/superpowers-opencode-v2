@@ -70,7 +70,7 @@ const vendored = fs
 
 assert.equal(skills.length, vendored.length, "all vendored skills registered")
 for (const s of skills) {
-  assert.ok(s.id && s.name && s.location && s.content, `${s.id} has required fields`)
+  assert.ok(s.id && s.name && s.path && s.content, `${s.id} has required fields`)
   assert.ok(s.description, `${s.id} has a description`)
   assert.ok(!s.content.startsWith("---"), `${s.id} body has no frontmatter`)
 }
